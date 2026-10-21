@@ -1,0 +1,43 @@
+{
+  "name": "Toka",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "22"
+    },
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.11"
+    }
+  },
+  "hostRequirements": {
+    "cpus": 4,
+    "memory": "16gb",
+    "storage": "32gb"
+  },
+  "forwardPorts": [80, 3002, 3003, 8000, 15672],
+  "portsAttributes": {
+    "80": {
+      "label": "Web client",
+      "onAutoForward": "openBrowser"
+    },
+    "3002": {
+      "label": "user-service",
+      "onAutoForward": "silent"
+    },
+    "3003": {
+      "label": "audit-service",
+      "onAutoForward": "silent"
+    },
+    "8000": {
+      "label": "ai-agent-service",
+      "onAutoForward": "silent"
+    },
+    "15672": {
+      "label": "RabbitMQ",
+      "onAutoForward": "silent"
+    }
+  },
+  "postCreateCommand": "bash .devcontainer/bootstrap.sh",
+  "postStartCommand": "docker compose up -d --wait"
+}

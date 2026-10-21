@@ -66,6 +66,14 @@ docker compose exec ai-agent-service python -m app.scripts.seed_knowledge
 
 **Apagar:** `docker compose down` (añadir `-v` para borrar los volúmenes de datos).
 
+## Probar en GitHub Codespaces
+
+En GitHub: **Code → Codespaces → Create codespace on main**. La configuración de [`.devcontainer/`](.devcontainer/devcontainer.json) pide 4 CPU y 16 GB, instala Docker, Node 22 y Python 3.11, copia `.env.example` a `.env` y levanta Compose. Al terminar, el puerto **80** se abre en el navegador: esa URL es el cliente web (Nginx hace de proxy hacia el resto de servicios).
+
+Entra con `admin@toka.com` / `Admin123!`. Al crear el Codespace también se indexa la base de conocimiento del asistente. Sin `GEMINI_API_KEY` el asistente queda en modo local; para usar Gemini, define ese nombre como secreto del Codespace antes de crearlo.
+
+Al reabrir el Codespace, `docker compose up -d --wait` vuelve a dejar el stack en marcha sin reconstruir las imágenes.
+
 ## Credenciales de acceso
 
 | Usuario | Contraseña | Rol |
