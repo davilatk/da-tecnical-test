@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  min-height: 100vh;
+  background: #f5f6f8;
+  color: #334155;
+  font-family: Poppins, ui-sans-serif, system-ui, sans-serif;
+}
+
+/* HeroUI aplica bg-clip-text al input; al enfocarlo el navegador dibuja un borde blanco. */
+input.bg-clip-text,
+textarea.bg-clip-text,
+input.bg-clip-text:focus,
+input.bg-clip-text:focus-visible,
+textarea.bg-clip-text:focus,
+textarea.bg-clip-text:focus-visible {
+  background-clip: padding-box;
+  -webkit-background-clip: padding-box;
+  outline: none;
+  box-shadow: none;
+}

@@ -1,0 +1,8 @@
+.git
+**/node_modules
+**/dist
+**/coverage
+**/.env
+**/*.md
+!packages/shared/package.json
+!apps/auth-service/package.json

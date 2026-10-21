@@ -1,0 +1,36 @@
+---
+description: Flujo obligatorio de Spec-Driven Development, DDD/Clean Architecture y logging JSON
+alwaysApply: true
+---
+
+# SDD Workflow
+
+## Regla de oro SDD
+
+Prohibido inventar endpoints, DTOs, esquemas de base de datos o eventos. Todo código en `packages/` y `apps/` debe implementarse leyendo primero su especificación en `specs/`. Si la spec no define un contrato, detente y pide que se complete; no lo inferas.
+
+## Arquitectura
+
+Cada microservicio respeta DDD y Clean Architecture en 4 capas. Las dependencias apuntan hacia dentro: `presentation` → `application` → `domain`. `infrastructure` implementa puertos de `application` y no filtra tipos de framework al dominio.
+
+- `domain/` — entidades, value objects y reglas de negocio. Sin frameworks, I/O ni SDKs.
+- `application/` — casos de uso y puertos. Orquesta el dominio.
+- `infrastructure/` — adaptadores: bases de datos, brokers, clientes HTTP, loggers.
+- `presentation/` — controladores, handlers HTTP o de mensajería, y mapeo de entrada/salida.
+
+## Flujo TDD/SDD
+
+Al implementar un servicio desde una spec, en este orden:
+
+1. Crear entidades de dominio y contratos/DTOs exactos según la spec.
+2. Crear tests unitarios en Jest o Pytest basados en los `Acceptance Criteria` de la spec (cobertura > 70%).
+3. Implementar casos de uso, infraestructura y controladores hasta que esos tests pasen.
+4. Marcar con `[x]` los checkboxes completados dentro del archivo `.spec.md`.
+
+## Logging
+
+Prohibido `console.log` y `print`. Todo log es una sola línea JSON con `timestamp` (ISO-8601), `level`, `service`, `traceId`, `message` y `context`.
+
+```json
+{"timestamp":"2026-10-21T17:24:00.000Z","level":"info","service":"auth-service","traceId":"8f3c1a","message":"login accepted","context":{"userId":"usr_01"}}
+```

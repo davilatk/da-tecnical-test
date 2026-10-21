@@ -1,0 +1,277 @@
+name: toka
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: toka-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-toka}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-toka_dev}
+      POSTGRES_DB: postgres
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - toka-network
+
+  mongodb:
+    image: mongo:7
+    container_name: toka-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-toka}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-toka_dev}
+      MONGO_INITDB_DATABASE: ${AUDIT_DB_NAME:-audit_db}
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    volumes:
+      - mongodb_data:/data/db
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mongosh --quiet --username \"$$MONGO_INITDB_ROOT_USERNAME\" --password \"$$MONGO_INITDB_ROOT_PASSWORD\" --authenticationDatabase admin --eval \"db.adminCommand('ping').ok\" | grep -q 1",
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    networks:
+      - toka-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: toka-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    networks:
+      - toka-network
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: toka-rabbitmq
+    hostname: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-toka}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-toka_dev}
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    networks:
+      - toka-network
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: toka-qdrant
+    ports:
+      - "${QDRANT_HTTP_PORT:-6333}:6333"
+      - "${QDRANT_GRPC_PORT:-6334}:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/6333'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks:
+      - toka-network
+
+  # Servicios de aplicación. Puertos según specs/00-system-context.spec.md.
+  # Las URLs usan los nombres de servicio de la red interna; los valores *_URL
+  # de .env apuntan a localhost y solo sirven para ejecutar fuera de Docker.
+
+  auth-service:
+    build:
+      context: .
+      dockerfile: apps/auth-service/Dockerfile
+    image: toka/auth-service:local
+    container_name: toka-auth-service
+    environment:
+      PORT: "3001"
+      AUTH_DATABASE_URL: postgresql://${POSTGRES_USER:-toka}:${POSTGRES_PASSWORD:-toka_dev}@postgres:5432/${AUTH_DB_NAME:-auth_db}
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-toka}:${RABBITMQ_PASSWORD:-toka_dev}@rabbitmq:5672
+      JWT_SECRET: ${JWT_SECRET:-local-dev-jwt-secret-change-me}
+    # HTTP interno: solo accesible desde la red de Docker y vía el proxy del web-client.
+    expose:
+      - "3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('net').connect(3001,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - toka-network
+
+  user-service:
+    build:
+      context: .
+      dockerfile: apps/user-service/Dockerfile
+    image: toka/user-service:local
+    container_name: toka-user-service
+    environment:
+      PORT: "3002"
+      USER_DATABASE_URL: postgresql://${POSTGRES_USER:-toka}:${POSTGRES_PASSWORD:-toka_dev}@postgres:5432/${USER_DB_NAME:-user_db}
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-toka}:${RABBITMQ_PASSWORD:-toka_dev}@rabbitmq:5672
+      JWT_SECRET: ${JWT_SECRET:-local-dev-jwt-secret-change-me}
+    ports:
+      - "${USER_SERVICE_PORT:-3002}:3002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('net').connect(3002,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - toka-network
+
+  audit-service:
+    build:
+      context: .
+      dockerfile: apps/audit-service/Dockerfile
+    image: toka/audit-service:local
+    container_name: toka-audit-service
+    environment:
+      PORT: "3003"
+      MONGODB_URI: mongodb://${MONGO_USER:-toka}:${MONGO_PASSWORD:-toka_dev}@mongodb:27017/${AUDIT_DB_NAME:-audit_db}?authSource=admin
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-toka}:${RABBITMQ_PASSWORD:-toka_dev}@rabbitmq:5672
+      JWT_SECRET: ${JWT_SECRET:-local-dev-jwt-secret-change-me}
+    ports:
+      - "${AUDIT_SERVICE_PORT:-3003}:3003"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('net').connect(3003,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - toka-network
+
+  ai-agent-service:
+    build:
+      context: ./apps/ai-agent-service
+      dockerfile: Dockerfile
+    image: toka/ai-agent-service:local
+    container_name: toka-ai-agent-service
+    environment:
+      # Vacía = modo local determinista (specs/05, "Proveedores").
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      QDRANT_URL: http://qdrant:6333
+      AUTH_SERVICE_URL: http://auth-service:3001
+      USER_SERVICE_URL: http://user-service:3002
+      AUDIT_SERVICE_URL: http://audit-service:3003
+      AI_HTTP_TIMEOUT_MS: ${AI_HTTP_TIMEOUT_MS:-3000}
+      AI_LLM_TIMEOUT_MS: ${AI_LLM_TIMEOUT_MS:-15000}
+      AI_MIN_SCORE: ${AI_MIN_SCORE:-0.2}
+      GEMINI_PRICE_INPUT_PER_MTOK_USD: ${GEMINI_PRICE_INPUT_PER_MTOK_USD:-0.30}
+      GEMINI_PRICE_OUTPUT_PER_MTOK_USD: ${GEMINI_PRICE_OUTPUT_PER_MTOK_USD:-2.50}
+    ports:
+      - "${AI_AGENT_SERVICE_PORT:-8000}:8000"
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+      user-service:
+        condition: service_started
+      audit-service:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8000), 2)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - toka-network
+
+  web-client:
+    build:
+      context: .
+      dockerfile: apps/web-client/Dockerfile
+    image: toka/web-client:local
+    container_name: toka-web-client
+    ports:
+      - "${WEB_CLIENT_PORT:-80}:80"
+    # Nginx resuelve los upstreams del proxy al arrancar: deben existir en la red.
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      user-service:
+        condition: service_healthy
+      audit-service:
+        condition: service_healthy
+      ai-agent-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - toka-network
+
+networks:
+  toka-network:
+    name: toka-network
+    driver: bridge
+
+volumes:
+  postgres_data:
+  mongodb_data:
+  redis_data:
+  rabbitmq_data:
+  qdrant_data:

@@ -1,0 +1,19 @@
+{
+  "name": "toka",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Monorepo Toka. La implementación de packages/ y apps/ sigue specs/ bajo Spec-Driven Development.",
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "scripts": {
+    "build": "pnpm -r --if-present run build",
+    "test": "pnpm -r --if-present run test",
+    "test:cov": "pnpm -r --if-present run test:cov",
+    "docker:infra": "docker compose up -d --wait postgres mongodb redis rabbitmq qdrant",
+    "docker:up": "docker compose up -d --wait",
+    "docker:down": "docker compose down"
+  }
+}
